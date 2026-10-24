@@ -12,6 +12,10 @@ export const COMMIT_DISTANCE_PX = 80;
 export const COMMIT_VELOCITY_PX_MS = 0.6;
 /** Release velocity is measured over this trailing window. */
 export const VELOCITY_WINDOW_MS = 100;
+/** The thumb dot on the pad follows the finger at most this far from the centre. */
+export const PAD_THUMB_MAX_PX = 40;
+/** The card leans this far towards the aimed direction once the drag reaches the commit distance. */
+export const CARD_NUDGE_PX = 14;
 
 export interface Sample {
   x: number;
@@ -27,6 +31,35 @@ export function dragDir(dx: number, dy: number): Dir | null {
   if (Math.max(Math.abs(dx), Math.abs(dy)) <= DEAD_ZONE_PX) return null;
   if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left';
   return dy > 0 ? 'down' : 'up';
+}
+
+export interface Offset {
+  x: number;
+  y: number;
+}
+
+/** The vector (dx, dy) shortened to at most `max` long. */
+export function clampOffset(dx: number, dy: number, max: number): Offset {
+  const len = Math.hypot(dx, dy);
+  if (len <= max) return { x: dx, y: dy };
+  const k = max / len;
+  return { x: dx * k, y: dy * k };
+}
+
+/** Card offset towards `dir`, growing with the drag along it up to CARD_NUDGE_PX. */
+export function nudgeOffset(dir: Dir | null, dx: number, dy: number): Offset {
+  if (dir === null) return { x: 0, y: 0 };
+  const d = Math.min(Math.max(along(dir, dx, dy), 0) / COMMIT_DISTANCE_PX, 1) * CARD_NUDGE_PX;
+  switch (dir) {
+    case 'up':
+      return { x: 0, y: -d };
+    case 'down':
+      return { x: 0, y: d };
+    case 'left':
+      return { x: -d, y: 0 };
+    case 'right':
+      return { x: d, y: 0 };
+  }
 }
 
 /** Signed displacement along `dir` (positive means towards it). */

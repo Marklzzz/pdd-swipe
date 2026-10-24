@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { dragDir, GestureTracker, type Sample } from './gesture';
+import {
+  CARD_NUDGE_PX,
+  clampOffset,
+  dragDir,
+  GestureTracker,
+  nudgeOffset,
+  type Sample,
+} from './gesture';
 
 /** Run a gesture through the tracker; the last sample is the pointer up. */
 function release(...samples: Sample[]) {
@@ -73,7 +80,7 @@ describe('GestureTracker', () => {
     expect(release(...samples)).toEqual({ kind: 'cancel' });
   });
 
-  it('cancels when the card is pulled back towards the centre', () => {
+  it('cancels when the finger is pulled back towards the start', () => {
     // Went far up, then slowly back to 50 px: still aimed up, but the user changed their mind.
     const back = slowDrag(0, 70, 700).map((s) => ({ x: 0, y: -120 + s.y, t: 300 + s.t }));
     expect(release(...slowDrag(0, -120, 300), ...back)).toEqual({ kind: 'cancel' });
@@ -83,5 +90,31 @@ describe('GestureTracker', () => {
     // Still above the dead zone but moving back down fast.
     const samples = [...slowDrag(0, -70, 1000), { x: 0, y: -60, t: 1010 }, { x: 0, y: -40, t: 1030 }];
     expect(release(...samples)).toEqual({ kind: 'cancel' });
+  });
+});
+
+describe('clampOffset', () => {
+  it('keeps a short vector as is', () => {
+    expect(clampOffset(3, -4, 10)).toEqual({ x: 3, y: -4 });
+  });
+
+  it('shortens a long vector, keeping its direction', () => {
+    expect(clampOffset(30, -40, 10)).toEqual({ x: 6, y: -8 });
+  });
+});
+
+describe('nudgeOffset', () => {
+  it('stays put without a direction', () => {
+    expect(nudgeOffset(null, 50, 50)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('moves only along the aimed axis, growing with the drag', () => {
+    expect(nudgeOffset('up', 20, -40)).toEqual({ x: 0, y: -CARD_NUDGE_PX / 2 });
+    expect(nudgeOffset('left', -40, 5)).toEqual({ x: -CARD_NUDGE_PX / 2, y: 0 });
+  });
+
+  it('stops at CARD_NUDGE_PX', () => {
+    expect(nudgeOffset('down', 0, 500)).toEqual({ x: 0, y: CARD_NUDGE_PX });
+    expect(nudgeOffset('right', 500, 0)).toEqual({ x: CARD_NUDGE_PX, y: 0 });
   });
 });

@@ -2,10 +2,11 @@
 
 import { firstRef, judge, type Answer, type Attempt } from '../core/attempt';
 import type { Question } from '../core/data';
-import type { Dir } from '../core/layout';
-import { optionForDir } from '../core/layout';
-import { Card, type CardRelease } from './card';
+import type { Release } from '../core/gesture';
+import { optionDirs, optionForDir, type Dir } from '../core/layout';
+import { Card } from './card';
 import { el } from './dom';
+import { Pad } from './pad';
 
 /** How long a correct answer stays on screen before the next question. */
 const CORRECT_PAUSE_MS = 600;
@@ -39,7 +40,12 @@ export class Sequential {
   private readonly score = el('span', { className: 'score' });
   private readonly progress = el('span', { className: 'progress' });
   private readonly stage = el('div', { className: 'stage' });
-  private readonly hint = el('button', { className: 'hint', type: 'button' });
+  private readonly pad = new Pad(
+    (dir, dx, dy) => {
+      if (this.state === 'question') this.card?.lean(dir, dx, dy);
+    },
+    (r) => this.onRelease(r),
+  );
 
   constructor(
     root: HTMLElement,
@@ -50,11 +56,8 @@ export class Sequential {
     root.replaceChildren(
       el('header', { className: 'bar' }, this.where, this.score, this.progress),
       this.stage,
-      this.hint,
+      this.pad.root,
     );
-    this.hint.addEventListener('click', () => {
-      if (this.state === 'correct' || this.state === 'reveal') this.next();
-    });
     document.addEventListener('keydown', (e) => this.onKey(e));
     window.addEventListener('resize', () => this.fit());
     this.show();
@@ -74,12 +77,15 @@ export class Sequential {
     const q = this.question;
     this.state = 'question';
     this.answered = false;
-    this.card = new Card(q, this.deps.imgBase, (r) => this.onRelease(r));
+    this.card = new Card(q, this.deps.imgBase, (index) => {
+      if (this.state === 'question') this.answer({ kind: 'option', index, dir: null });
+    });
+    this.pad.setDirs(optionDirs(q.options.length));
     this.stage.replaceChildren(el('div', { className: 'stack' }, this.card.root));
     this.stage.scrollTop = 0;
     this.fit();
     this.setHint(
-      q.options.length > 4 ? 'Тап по варианту — ответ · по вопросу — не знаю' : 'Свайп — ответ · тап — не знаю',
+      q.options.length > 4 ? 'Тап по варианту — ответ · тап здесь — не знаю' : 'Свайп — ответ · тап — не знаю',
     );
     // The clock starts once the picture is visible.
     this.shownAt = performance.now();
@@ -91,19 +97,16 @@ export class Sequential {
     if (nextImg) new Image().src = this.deps.imgBase + nextImg;
   }
 
-  private onRelease({ release, row }: CardRelease): void {
+  private onRelease(release: Release): void {
     if (this.state === 'correct' || this.state === 'reveal') {
       if (release.kind !== 'cancel') this.next();
       return;
     }
     if (this.state !== 'question') return;
-    const n = this.question.options.length;
     if (release.kind === 'tap') {
-      // With 5 options swipes are off and a row is answered by tapping it.
-      if (n > 4 && row !== null) this.answer({ kind: 'option', index: row, dir: null });
-      else this.answer({ kind: 'unknown' });
+      this.answer({ kind: 'unknown' });
     } else if (release.kind === 'swipe') {
-      const index = optionForDir(n, release.dir);
+      const index = optionForDir(this.question.options.length, release.dir);
       if (index !== null) this.answer({ kind: 'option', index, dir: release.dir });
     }
   }
@@ -169,10 +172,10 @@ export class Sequential {
     // A focused button handles Enter and Space itself.
     if ((e.target as Element | null)?.closest?.('button')) return;
     const dir = KEY_DIRS[e.key];
-    let release: CardRelease | null = null;
-    if (dir) release = { release: { kind: 'swipe', dir }, row: null };
-    else if (e.key === ' ') release = { release: { kind: 'tap' }, row: null };
-    else if (e.key === 'Enter' && this.state !== 'question') release = { release: { kind: 'tap' }, row: null };
+    let release: Release | null = null;
+    if (dir) release = { kind: 'swipe', dir };
+    else if (e.key === ' ') release = { kind: 'tap' };
+    else if (e.key === 'Enter' && this.state !== 'question') release = { kind: 'tap' };
     else if (/^[1-5]$/.test(e.key) && this.state === 'question') {
       const index = Number(e.key) - 1;
       if (index < this.question.options.length) {
@@ -209,8 +212,6 @@ export class Sequential {
   }
 
   private setHint(text: string): void {
-    this.hint.textContent = text;
-    this.hint.disabled = this.state === 'question' || this.state === 'done';
-    this.hint.hidden = text === '';
+    this.pad.setLabel(text, this.state === 'reveal');
   }
 }
